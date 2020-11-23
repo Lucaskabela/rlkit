@@ -28,7 +28,7 @@ class SACTrainer(TorchTrainer, LossFunction):
             target_qf1,
             target_qf2,
 
-            discount=0.99,
+            discount=0.98,
             reward_scale=1.0,
 
             policy_lr=1e-3,
@@ -94,7 +94,7 @@ class SACTrainer(TorchTrainer, LossFunction):
 
     def train_from_torch(self, batch):
         gt.blank_stamp()
-        losses, stats = self.compute_loss(
+        losses, stats, errors = self.compute_loss(
             batch,
             skip_statistics=not self._need_to_update_eval_statistics,
         )
@@ -126,7 +126,8 @@ class SACTrainer(TorchTrainer, LossFunction):
             # Compute statistics using only one batch per epoch
             self._need_to_update_eval_statistics = False
         gt.stamp('sac training', unique=False)
-
+        return errors
+        
     def try_update_target_networks(self):
         if self._n_train_steps_total % self.target_update_period == 0:
             self.update_target_networks()
@@ -149,7 +150,7 @@ class SACTrainer(TorchTrainer, LossFunction):
         obs = batch['observations']
         actions = batch['actions']
         next_obs = batch['next_observations']
-
+        weights = batch["weights"]
         """
         Policy and Alpha Loss
         """
@@ -157,7 +158,7 @@ class SACTrainer(TorchTrainer, LossFunction):
         new_obs_actions, log_pi = dist.rsample_and_logprob()
         log_pi = log_pi.unsqueeze(-1)
         if self.use_automatic_entropy_tuning:
-            alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
+            alpha_loss = -(weights.detach() * (self.log_alpha * (log_pi + self.target_entropy).detach())).mean()
             alpha = self.log_alpha.exp()
         else:
             alpha_loss = 0
@@ -167,7 +168,7 @@ class SACTrainer(TorchTrainer, LossFunction):
             self.qf1(obs, new_obs_actions),
             self.qf2(obs, new_obs_actions),
         )
-        policy_loss = (alpha*log_pi - q_new_actions).mean()
+        policy_loss = (weights.detach() * (alpha*log_pi - q_new_actions)).mean()
 
         """
         QF Loss
@@ -183,9 +184,9 @@ class SACTrainer(TorchTrainer, LossFunction):
         ) - alpha * new_log_pi
 
         q_target = self.reward_scale * rewards + (1. - terminals) * self.discount * target_q_values
-        qf1_loss = self.qf_criterion(q1_pred, q_target.detach())
-        qf2_loss = self.qf_criterion(q2_pred, q_target.detach())
-
+        qf1_loss = ( weights.detach() * ((q1_pred-q_target.detach())**2)).mean()
+        qf2_loss = ( weights.detach() * ((q2_pred-q_target.detach())**2)).mean()
+        errors = (((torch.abs(q_target - q1_pred) + torch.abs(q_target - q2_pred)) / 2)* weights).detach() 
         """
         Save some statistics for eval
         """
@@ -225,7 +226,7 @@ class SACTrainer(TorchTrainer, LossFunction):
             alpha_loss=alpha_loss,
         )
 
-        return loss, eval_statistics
+        return loss, eval_statistics, errors
 
     def get_diagnostics(self):
         stats = super().get_diagnostics()

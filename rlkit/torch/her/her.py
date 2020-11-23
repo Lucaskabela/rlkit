@@ -4,17 +4,20 @@ from rlkit.torch.torch_rl_algorithm import TorchTrainer
 
 
 class HERTrainer(TorchTrainer):
-    def __init__(self, base_trainer: TorchTrainer):
+    def __init__(self, base_trainer: TorchTrainer, use_per=False):
         super().__init__()
         self._base_trainer = base_trainer
+        self.use_per = use_per
 
     def train_from_torch(self, data):
+        self._base_trainer._num_train_steps += 1
         obs = data['observations']
         next_obs = data['next_observations']
         goals = data['resampled_goals']
         data['observations'] = torch.cat((obs, goals), dim=1)
         data['next_observations'] = torch.cat((next_obs, goals), dim=1)
-        self._base_trainer.train_from_torch(data)
+        error = self._base_trainer.train_from_torch(data)
+        return error
 
     def get_diagnostics(self):
         return self._base_trainer.get_diagnostics()
