@@ -52,7 +52,7 @@ class SACTrainer(TorchTrainer, LossFunction):
         self.target_qf2 = target_qf2
         self.soft_target_tau = soft_target_tau
         self.target_update_period = target_update_period
-
+        self.use_per=False
         self.use_automatic_entropy_tuning = use_automatic_entropy_tuning
         if self.use_automatic_entropy_tuning:
             if target_entropy is None:

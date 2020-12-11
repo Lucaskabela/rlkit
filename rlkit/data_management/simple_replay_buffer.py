@@ -76,6 +76,8 @@ class SimpleReplayBuffer(ReplayBuffer):
         for key in self._env_info_keys:
             assert key not in batch.keys()
             batch[key] = self._env_infos[key][indices]
+        batch['indices'] = np.array(indices).reshape(-1, 1)
+        batch['weights'] = np.ones_like(batch['indices'])
         return batch
 
     def rebuild_env_info_dict(self, idx):
